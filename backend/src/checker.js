@@ -7,30 +7,46 @@ function getStatus(daysLeft) {
   return "OK";
 }
 
-function getCertificateInfo(host, port = 443) {
+function getCertificateInfo(host, port = 443, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const socket = tls.connect(port, host, { servername: host }, () => {
-      const cert = socket.getPeerCertificate();
-      socket.end();
-
-      if (!cert || !cert.valid_to) {
-        return reject(new Error("No certificate received"));
-      }
-
-      const validTo = new Date(cert.valid_to);
-      const now = new Date();
-      const daysLeft = Math.ceil((validTo - now) / (1000 * 60 * 60 * 24));
-
-      resolve({
+    const socket = tls.connect(
+      {
         host,
-        valid_to: validTo.toISOString(),
-        days_left: daysLeft,
-        status: getStatus(daysLeft),
-        issuer: cert.issuer?.O || "Unknown"
-      });
+        port,
+        servername: host,
+        rejectUnauthorized: false, // важно для просроченных сертификатов
+      },
+      () => {
+        const cert = socket.getPeerCertificate();
+        socket.end();
+
+        if (!cert || !cert.valid_to) {
+          return reject(new Error("No certificate received"));
+        }
+
+        const validTo = new Date(cert.valid_to);
+        const now = new Date();
+        const daysLeft = Math.ceil((validTo - now) / (1000 * 60 * 60 * 24));
+
+        resolve({
+          host,
+          valid_to: validTo.toISOString(),
+          days_left: daysLeft,
+          status: getStatus(daysLeft),
+          issuer: cert.issuer?.O || "Unknown",
+        });
+      }
+    );
+
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy();
+      reject(new Error("TLS connection timeout"));
     });
 
-    socket.on("error", reject);
+    socket.on("error", (err) => {
+      socket.destroy();
+      reject(err);
+    });
   });
 }
 
