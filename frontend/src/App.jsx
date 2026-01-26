@@ -1,3 +1,4 @@
+import "./App.css";
 import { useEffect, useState } from "react";
 
 const statusColor = {
@@ -61,45 +62,76 @@ function App() {
     }
   };
 
+  const deleteDomain = async (host) => {
+    if (!confirm(`Удалить ${host}?`)) return;
+    await fetch(`http://localhost:3000/api/domains/${host}`, { method: "DELETE" });
+    loadCerts();
+  };
+
   return (
-    <div style={{ padding: "20px", maxWidth: "800px" }}>
-      <h1>SSL Monitor</h1>
+    <div className="app-container">  
+      <div className="card">
+        <h1 className="header">🔐 SSL Certificate Monitor</h1>
 
-      <div style={{ marginBottom: "15px" }}>
-        <input
-          type="text"
-          placeholder="example.com"
-          value={newDomain}
-          onChange={e => setNewDomain(e.target.value)}
-          style={{ padding: "6px", width: "250px", marginRight: "10px" }}
-          onKeyDown={e => e.key === "Enter" && addDomain()}
-        />
-        <button onClick={addDomain} disabled={loading}>Добавить</button>
-        {error && <div style={{ color: "red", marginTop: "5px" }}>{error}</div>}
-      </div>
+        <div className="form-row">
+          <input
+            className="domain-input"
+            type="text"
+            placeholder="example.com"
+            value={newDomain}
+            onChange={e => setNewDomain(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addDomain()}
+          />
+          <button
+            className="add-button"
+            onClick={addDomain}
+            disabled={loading}
+          >
+            {loading ? "Добавление..." : "Добавить"}
+          </button>
+        </div>
 
-      <table border="1" cellPadding="8">
-        <thead>
-          <tr>
-            <th>Host</th>
-            <th>Days left</th>
-            <th>Status</th>
-            <th>Issuer</th>
-          </tr>
-        </thead>
-        <tbody>
-          {certs.map(cert => (
-            <tr key={cert.host}>
-              <td>{cert.host}</td>
-              <td>{cert.days_left !== null ? cert.days_left : "—"}</td>
-              <td style={{ color: statusColor[cert.status], fontWeight: "bold" }}>
-                {cert.status}
-              </td>
-              <td>{cert.issuer || "N/A"}</td>
+        {error && <div className="error-box">{error}</div>}
+
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th className="days">Days left</th>
+              <th className="status">Status</th>
+              <th>Issuer</th>
+              <th>Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {certs.map(cert => (
+              <tr key={cert.host}
+                className={
+                  cert.status === "EXPIRED"
+                  ? "row-expired"
+                  : cert.status === "CRITICAL"
+                  ? "row-critical"
+                  : ""
+                }
+              >
+                <td>{cert.host}</td>
+                <td className="days">{cert.days_left ?? "—"}</td>
+                <td className="status">
+                  <span className={`status-badge status-${cert.status.toLowerCase()}`}>
+                    {cert.status}
+                  </span>
+                </td>
+                <td>{cert.issuer || "N/A"}</td>
+                <td>
+                  <button className="delete-btn" title="Удалить" onClick={() => deleteDomain(cert.host)}>
+                    ✖
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
