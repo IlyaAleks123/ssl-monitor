@@ -9,22 +9,25 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-// временный список доменов
-let DOMAINS = [
-  "chat.obmin24.info",
-  "kantorkurs.pl"
-];
+const db = require("./db");
+
+async function getDomains() {
+  const { rows } = await db.query("SELECT id, host FROM domains ORDER BY id");
+  return rows;
+}
 
 app.get("/api/certs", async (req, res) => {
+  const domains = await getDomains();
   const results = [];
 
-  for (const host of DOMAINS) {
+  for (const d of domains) {
     try {
-      const info = await getCertificateInfo(host);
-      results.push(info);
+      const info = await getCertificateInfo(d.host);
+      results.push({ ...info, id: d.id });
     } catch (err) {
       results.push({
-        host,
+        host: d.host,
+        id: d.id,
         error: err.message,
         status: "ERROR",
         days_left: null,
@@ -36,47 +39,38 @@ app.get("/api/certs", async (req, res) => {
   res.json(results);
 });
 
-app.get("/api/domains", (req, res) => {
-  res.json(DOMAINS);
+app.get("/api/domains", async (req, res) => {
+  const domains = await getDomains();
+  res.json(domains.map(d => d.host));
 });
 
 app.post("/api/domains", async (req, res) => {
   const { host } = req.body;
-
-  if (!host) {
-    return res.status(400).json({ error: "host is required" });
-  }
-
-  if (DOMAINS.includes(host)) {
-    return res.status(409).json({ error: "domain already exists" });
-  }
+  if (!host) return res.status(400).json({ error: "host is required" });
 
   try {
-    // пробуем получить сертификат
     await getCertificateInfo(host);
-
-    DOMAINS.push(host);
+    await db.query("INSERT INTO domains(host) VALUES($1)", [host]);
     res.status(201).json({ message: "domain added", host });
   } catch (err) {
-    // если не удалось подключиться — не добавляем
-    res.status(400).json({
-      error: "domain is not reachable via TLS",
-      details: err.message
-    });
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "domain already exists" });
+    }
+    res.status(400).json({ error: err.message });
   }
 });
 
-app.delete("/api/domains/:host", (req, res) => {
-  const host = req.params.host;
+app.delete("/api/domains/:host", async (req, res) => {
+  const { host } = req.params;
 
-  const index = DOMAINS.indexOf(host);
-  if (index === -1) {
+  const result = await db.query("DELETE FROM domains WHERE host=$1", [host]);
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: "domain not found" });
   }
 
-  DOMAINS.splice(index, 1);
   res.json({ message: "domain deleted", host });
 });
+
 
 
 app.get("/health", (req, res) => {
@@ -95,52 +89,65 @@ app.listen(PORT, async () => {
 
 const CHECK_INTERVAL = 24 * 60 * 60 * 1000; // раз в сутки
 
-const alertState = {}; // { host: { lastAlertAt: Date } }
-
-function shouldSendAlert(host, daysLeft) {
-  const state = alertState[host];
-
+async function shouldSendAlert(domainId, daysLeft) {
   if (daysLeft > 7) {
-    delete alertState[host]; // сертификат обновился
+    await db.query("DELETE FROM alert_state WHERE domain_id=$1", [domainId]);
     return false;
   }
 
-  if (!state) {
-    alertState[host] = { lastAlertAt: new Date() };
-    return true; // первый алерт
+  const { rows } = await db.query(
+    "SELECT last_alert_at FROM alert_state WHERE domain_id=$1",
+    [domainId]
+  );
+
+  if (rows.length === 0) {
+    await db.query(
+      "INSERT INTO alert_state(domain_id, last_alert_at) VALUES ($1, NOW())",
+      [domainId]
+    );
+    return true;
   }
 
-  const now = new Date();
-  const diffDays = (now - state.lastAlertAt) / (1000 * 60 * 60 * 24);
+  const last = new Date(rows[0].last_alert_at);
+  const diffDays = (Date.now() - last) / 86400000;
 
   if (diffDays >= 2) {
-    state.lastAlertAt = now;
-    return true; // повтор через 2 дня
+    await db.query(
+      "UPDATE alert_state SET last_alert_at=NOW() WHERE domain_id=$1",
+      [domainId]
+    );
+    return true;
   }
 
   return false;
 }
 
 async function runDailyCheck() {
-  console.log("Running daily SSL check...");
+  try {
+    console.log("Running daily SSL check...");
+    const domains = await getDomains();
 
-  for (const host of DOMAINS) {
-    try {
-      const info = await getCertificateInfo(host);
+    for (const d of domains) {
+      try {
+        const info = await getCertificateInfo(d.host);
 
-      if (shouldSendAlert(host, info.days_left)) {
-        await sendMessage(
-          `⚠️ SSL сертификат скоро истечёт\n\n` +
-          `Домен: ${host}\n` +
-          `Осталось дней: ${info.days_left}\n` +
-          `Дата истечения: ${info.valid_to}`
-        );
+        if (await shouldSendAlert(d.id, info.days_left)) {
+          await sendMessage(
+            `⚠️ SSL сертификат скоро истечёт\n\n` +
+            `Домен: ${d.host}\n` +
+            `Осталось дней: ${info.days_left}\n` +
+            `Дата истечения: ${info.valid_to}`
+          );
+        }
+      } catch (err) {
+        console.error(`Failed to check ${d.host}:`, err.message);
       }
-    } catch (err) {
-      console.error(`Failed to check ${host}:`, err.message);
     }
+  } catch (err) {
+    console.error("Daily SSL check failed:", err);
   }
 }
+
 
 // запуск при старте
 runDailyCheck();

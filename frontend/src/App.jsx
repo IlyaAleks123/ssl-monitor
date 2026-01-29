@@ -17,7 +17,7 @@ function App() {
 
   const loadCerts = async () => {
     try {
-      const res = await fetch("http://localhost:3000/api/certs");
+      const res = await fetch("/api/certs");
 
       if (!res.ok) {
         throw new Error("API error: " + res.status);
@@ -43,7 +43,7 @@ function App() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3000/api/domains", {
+      const res = await fetch("/api/domains", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ host: newDomain.trim() }),
@@ -64,7 +64,7 @@ function App() {
 
   const deleteDomain = async (host) => {
     if (!confirm(`Удалить ${host}?`)) return;
-    await fetch(`http://localhost:3000/api/domains/${host}`, { method: "DELETE" });
+    await fetch(`/api/domains/${host}`, { method: "DELETE" });
     loadCerts();
   };
 
@@ -93,44 +93,52 @@ function App() {
 
         {error && <div className="error-box">{error}</div>}
 
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Host</th>
-              <th className="days">Days left</th>
-              <th className="status">Status</th>
-              <th>Issuer</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {certs.map(cert => (
-              <tr key={cert.host}
-                className={
-                  cert.status === "EXPIRED"
-                  ? "row-expired"
-                  : cert.status === "CRITICAL"
-                  ? "row-critical"
-                  : ""
-                }
-              >
-                <td>{cert.host}</td>
-                <td className="days">{cert.days_left ?? "—"}</td>
-                <td className="status">
-                  <span className={`status-badge status-${cert.status.toLowerCase()}`}>
-                    {cert.status}
-                  </span>
-                </td>
-                <td>{cert.issuer || "N/A"}</td>
-                <td>
-                  <button className="delete-btn" title="Удалить" onClick={() => deleteDomain(cert.host)}>
-                    ✖
-                  </button>
-                </td>
+        <div className="table-wrapper">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th className="days">Days left</th>
+                <th className="expires">Expires at</th>
+                <th className="status">Status</th>
+                <th>Issuer</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {certs.map(cert => (
+                <tr key={cert.host}
+                  className={
+                    cert.status === "EXPIRED"
+                    ? "row-expired"
+                    : cert.status === "CRITICAL"
+                    ? "row-critical"
+                    : ""
+                  }
+                >
+                  <td>{cert.host}</td>
+                  <td className="days">{cert.days_left ?? "—"}</td>
+                  <td className="expires">
+                    {cert.valid_to
+                      ? new Date(cert.valid_to).toLocaleDateString("ru-RU")
+                      : "—"}
+                  </td>
+                  <td className="status">
+                    <span className={`status-badge status-${cert.status.toLowerCase()}`}>
+                      {cert.status}
+                    </span>
+                  </td>
+                  <td>{cert.issuer || "N/A"}</td>
+                  <td>
+                    <button className="delete-btn" title="Удалить" onClick={() => deleteDomain(cert.host)}>
+                      ✖
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
