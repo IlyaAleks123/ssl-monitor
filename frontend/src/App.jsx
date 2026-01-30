@@ -51,7 +51,7 @@ function App() {
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Ошибка добавления домена");
+        setError(data.error || "Error adding domain");
         return;
       }
 
@@ -63,7 +63,7 @@ function App() {
   };
 
   const deleteDomain = async (host) => {
-    if (!confirm(`Удалить ${host}?`)) return;
+    if (!confirm(`Delete ${host}?`)) return;
     await fetch(`/api/domains/${host}`, { method: "DELETE" });
     loadCerts();
   };
@@ -87,7 +87,7 @@ function App() {
             onClick={addDomain}
             disabled={loading}
           >
-            {loading ? "Добавление..." : "Добавить"}
+            {loading ? "Adding..." : "Add"}
           </button>
         </div>
 
@@ -130,7 +130,7 @@ function App() {
                   </td>
                   <td>{cert.issuer || "N/A"}</td>
                   <td>
-                    <button className="delete-btn" title="Удалить" onClick={() => deleteDomain(cert.host)}>
+                    <button className="delete-btn" title="Delete" onClick={() => deleteDomain(cert.host)}>
                       ✖
                     </button>
                   </td>
